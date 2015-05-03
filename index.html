@@ -2,9 +2,216 @@
 <html>
 <head lang="en">
     <meta charset="UTF-8">
-    <title>Audio Waves</title>
+    <title>Music Waveform Representation</title>
+    <style>
+        /* micro css reset */
+        html, body, div, form, fieldset, legend, label {
+            margin: 0;
+            padding: 0;
+        }
+
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
+        }
+
+        th, td {
+            text-align: left;
+            vertical-align: top;
+        }
+
+        h1, h2, h3, h4, h5, h6, th, td, caption { font-weight: normal; }
+
+        img { border: 0; }
+
+        /* end of reset */
+
+        #canvas {
+            width: 100%;
+            height: 100vh;
+            background: black;
+        }
+
+        div button  {
+            color: rgb(250,250,250);
+            background: rgba(0,0,0, 0.20);
+            border: 2px solid rgba(250,250,250, .5);
+            border-radius: 2.5px;
+            min-height: 40px;
+            min-width: 50px;
+            cursor: pointer;
+            transition: 0.25s;
+        }
+
+        div button:hover, div button:focus {
+            transition: 0.25s;
+            border-color: rgba(250,250,250, .75);
+            background: rgba(250,250,250, 0.25);
+        }
+
+        div #play {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+        }
+
+        div #pause {
+            position: absolute;
+            top: 15px;
+            left: 75px;
+        }
+    </style>
 </head>
 <body>
+    <canvas id="canvas" width="510" height="256"></canvas>
 
+    <div class="sectControls">
+        <button type="button" class="controls" id="play">Play</button>
+        <button type="button" class="controls" id="pause">Stop</button>
+    </div>
+
+<script type="text/javascript" src="https://code.jquery.com/jquery-1.11.3.js"></script>
+    <script type="text/javascript">
+
+        // Hacks to deal with different function names in different browsers
+        window.requestAnimFrame = (function(){
+            return  window.requestAnimationFrame       ||
+                    window.webkitRequestAnimationFrame ||
+                    window.mozRequestAnimationFrame    ||
+                    function(callback, element){
+                        window.setTimeout(callback, 1000);
+                    };
+        })();
+
+        window.AudioContext = (function(){
+            return  window.AudioContext;
+        })();
+
+        // Global Variables
+        var audioContext;
+        var audioBuffer;
+        var sourceNode;
+        var analyserNode;
+        var javascriptNode;
+        var audioData = null;
+        var audioPlaying = false;
+        var sampleSize = 1024;  // number of samples to collect before analyzing data
+        var amplitudeArray;     // array to hold time domain data
+
+        // location of played audio
+        var audioUrl = "assets/short-change-hero.mp3";
+
+        // Global Variables for the Graphics
+        var canvasWidth  = 700;
+        var canvasHeight = 250;
+        var ctx;
+
+        $(document).ready(function() {
+
+            ctx = $("#canvas").get()[0].getContext("2d");
+
+            // the AudioContext is the primary 'container' for all your audio node objects
+            try {
+                audioContext = new AudioContext();
+            } catch(e) {
+                alert('Web Audio API is not supported in this browser');
+            }
+
+            // When the Start button is clicked, finish setting up the audio nodes, play the sound,
+            // gather samples for the analysis, update the canvas
+            $("#play").on('click', function(e) {
+                e.preventDefault();
+
+                // Set up the audio Analyser, the Source Buffer and javascriptNode
+                setupAudioNodes();
+
+                // setup the event handler that is triggered every time enough samples have been collected
+                // trigger the audio analysis and draw the results
+                javascriptNode.onaudioprocess = function () {
+
+                    // get the Time Domain data for this sample
+                    analyserNode.getByteTimeDomainData(amplitudeArray);
+
+                    // draw the display if the audio is playing
+                    if (audioPlaying == true) {
+                        requestAnimFrame(drawTimeDomain);
+                    }
+                };
+
+                // Load the Audio the first time through, otherwise play it from the buffer
+                if(audioData == null) {
+                    loadSound(audioUrl);
+                } else {
+                    playSound(audioData);
+                }
+            });
+
+            // Stop the audio playing
+            $("#pause").on('click', function(e) {
+                e.preventDefault();
+                sourceNode.stop(0);
+                audioPlaying = false;
+            });
+        });
+
+        function setupAudioNodes() {
+            sourceNode     = audioContext.createBufferSource();
+            analyserNode   = audioContext.createAnalyser();
+            javascriptNode = audioContext.createScriptProcessor(sampleSize, 1, 1);
+
+            // Create the array for the data values
+            amplitudeArray = new Uint8Array(analyserNode.frequencyBinCount);
+
+            // Now connect the nodes together
+            sourceNode.connect(audioContext.destination);
+            sourceNode.connect(analyserNode);
+            analyserNode.connect(javascriptNode);
+            javascriptNode.connect(audioContext.destination);
+        }
+
+        // Load the audio from the URL via Ajax and store it in global variable audioData
+        // Note that the audio load is asynchronous
+        function loadSound(url) {
+            var request = new XMLHttpRequest();
+            request.open('GET', url, true);
+            request.responseType = 'arraybuffer';
+
+            // When loaded, decode the data and play the sound
+            request.onload = function () {
+                audioContext.decodeAudioData(request.response, function (buffer) {
+                    audioData = buffer;
+                    playSound(audioData);
+                }, onError);
+            };
+            request.send();
+        }
+
+        // Play the audio and loop until stopped
+        function playSound(buffer) {
+            sourceNode.buffer = buffer;
+            sourceNode.start(0);    // Play the sound now
+            sourceNode.loop = true;
+            audioPlaying = true;
+        }
+
+        function onError(e) {
+            console.log(e);
+        }
+
+        function drawTimeDomain() {
+            clearCanvas();
+            for (var i = 0; i < amplitudeArray.length; i++) {
+                var value = amplitudeArray[i] / 256;
+                var y = canvasHeight - (canvasHeight * value) - 1;
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(i, y, 1, 1);
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        }
+
+    </script>
 </body>
 </html>
